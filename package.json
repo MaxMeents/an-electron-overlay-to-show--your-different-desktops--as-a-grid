@@ -1,0 +1,45 @@
+{
+  "name": "desktop-grid-overlay",
+  "version": "1.0.0",
+  "description": "Transparent Electron overlay for Windows virtual desktops. Double-tap Right Alt to show.",
+  "main": "main.js",
+  "author": "maxmeents",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.maxmeents.desktopgrid",
+    "productName": "DesktopGrid",
+    "directories": { "output": "dist" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "styles.css",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      "host.ps1",
+      "vd.ps1"
+    ],
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "DesktopGrid.exe"
+    }
+  }
+}
