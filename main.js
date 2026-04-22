@@ -97,9 +97,11 @@ class PsHost {
   async newDesktop() { return this.send('NEW', 3000); }
   async rename(index, name) { return this.send('RENAME ' + index + '|' + name, 4000); }
   async goto(index) { return this.send('GOTO ' + index, 3000); }
+  async pin(hwnd) { return this.send('PIN ' + hwnd, 3000); }
 }
 
 const host = new PsHost();
+const captureHost = new PsHost();
 
 // ---------------- Cache ----------------
 
@@ -139,7 +141,8 @@ async function captureAll() {
     if (!info) return;
     cache.info = info;
     if (win) win.webContents.send('data', buildPayload());
-    await host.captureAllNoSwitch(CACHE_DIR);
+    // Run on the dedicated slow host so GOTO/LIST/RENAME remain responsive on the main host
+    await captureHost.captureAllNoSwitch(CACHE_DIR);
     const info2 = await host.list();
     if (info2) cache.info = info2;
     if (win) win.webContents.send('data', buildPayload());
@@ -160,7 +163,7 @@ async function refreshCurrentThumb() {
   const info = await host.list();
   if (!info) return;
   cache.info = info;
-  await host.capture(thumbPath(info.current));
+  await captureHost.capture(thumbPath(info.current));
   if (win) win.webContents.send('data', buildPayload());
 }
 
@@ -168,8 +171,10 @@ async function refreshCurrentThumb() {
 
 let win = null;
 let tray = null;
+let winPinned = false;
+let suppressBlurHide = false;
 
-function createWindow() {
+async function createWindow() {
   const disp = screen.getPrimaryDisplay();
   win = new BrowserWindow({
     x: disp.bounds.x,
@@ -183,6 +188,7 @@ function createWindow() {
     resizable: false,
     hasShadow: false,
     show: false,
+    focusable: true,
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -194,35 +200,58 @@ function createWindow() {
   win.setMenuBarVisibility(false);
   win.setAlwaysOnTop(true, 'screen-saver');
   win.loadFile('index.html');
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { win = null; winPinned = false; });
   win.on('blur', () => {
+    if (suppressBlurHide) return;
     if (win && win.isVisible()) hideOverlay();
   });
   win.webContents.on('did-finish-load', () => {
     const payload = buildPayload();
     if (payload) win.webContents.send('data', payload);
   });
+  await new Promise(r => win.webContents.once('did-finish-load', r));
+  // Pin the window to all virtual desktops so hide/show doesn't bounce through desktops
+  try {
+    const hwndBuf = win.getNativeWindowHandle();
+    const hwnd = hwndBuf.length >= 8 ? hwndBuf.readBigUInt64LE(0).toString() : String(hwndBuf.readUInt32LE(0));
+    await host.pin(hwnd);
+    winPinned = true;
+  } catch (e) { /* fallback: non-pinned */ }
 }
 
-function showOverlay() {
-  if (win && win.isVisible()) { win.focus(); return; }
-  if (win) { try { win.destroy(); } catch (e) {} win = null; }
-  createWindow();
-  win.once('ready-to-show', () => {
-    win.show();
-    win.moveTop();
-    win.focus();
-    const p = buildPayload();
-    if (p) win.webContents.send('data', p);
-  });
-  // async list refresh in background — non-blocking
-  refreshListOnly().then(() => { if (win) win.webContents.send('data', buildPayload()); }).catch(() => {});
+async function showOverlay() {
+  if (!win) { await createWindow(); }
+  if (!win) return;
+  if (win.isVisible()) { forceFocus(); return; }
+  const p = buildPayload();
+  if (p) win.webContents.send('data', p);
+  suppressBlurHide = true;
+  win.showInactive();
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.moveTop();
+  forceFocus();
+  setTimeout(() => { suppressBlurHide = false; }, 350);
+  // Always refresh thumbnails when the overlay is shown (background, no switching)
+  captureAll().catch(() => {});
+}
+
+function forceFocus() {
+  if (!win) return;
+  try { app.focus({ steal: true }); } catch (e) {}
+  try { win.focus(); } catch (e) {}
+  // The extra toggle of alwaysOnTop convinces Windows to bring us above other topmost windows
+  setTimeout(() => {
+    if (!win || !win.isVisible()) return;
+    try { win.setAlwaysOnTop(false); } catch (e) {}
+    try { win.setAlwaysOnTop(true, 'screen-saver'); } catch (e) {}
+    try { win.focus(); } catch (e) {}
+    try { app.focus({ steal: true }); } catch (e) {}
+  }, 40);
 }
 
 function hideOverlay() {
   if (!win) return;
-  try { win.destroy(); } catch (e) {}
-  win = null;
+  try { win.hide(); } catch (e) {}
 }
 
 function toggleOverlay() {
@@ -321,19 +350,10 @@ function stopKeyHook() { try { uIOhook && uIOhook.stop(); } catch (e) {} }
 // ---------------- IPC ----------------
 
 ipcMain.handle('goto', async (_e, index) => {
-  const from = (cache.info && typeof cache.info.current === 'number') ? cache.info.current : null;
   hideOverlay();
-  await new Promise(r => setTimeout(r, 60));
-  try {
-    if (from !== null && from !== index) {
-      const diff = index - from;
-      const dir = diff > 0 ? 'RIGHT' : 'LEFT';
-      for (let i = 0; i < Math.abs(diff); i++) await host.step(dir);
-    } else {
-      await host.goto(index);
-    }
-  } catch (e) {}
-  setTimeout(() => { refreshCurrentThumb().catch(() => {}); }, 500);
+  await new Promise(r => setTimeout(r, 40));
+  try { await host.goto(index); } catch (e) {}
+  setTimeout(() => { refreshCurrentThumb().catch(() => {}); }, 350);
 });
 
 ipcMain.handle('create', async () => {
@@ -368,9 +388,13 @@ else {
     startKeyHook();
     try {
       await host.start();
+      // Start the capture host in parallel — slow setup doesn't block main host
+      captureHost.start().catch(() => {});
       await refreshListOnly();
       // capture only the current desktop at startup (fast, no window enumeration)
       refreshCurrentThumb().catch(() => {});
+      // Pre-create the hidden pinned window so first toggle is instant
+      createWindow().catch(() => {});
     } catch (e) { console.error(e); }
   });
 }
@@ -379,5 +403,7 @@ app.on('window-all-closed', (e) => { if (e && e.preventDefault) e.preventDefault
 app.on('before-quit', () => {
   app.isQuitting = true;
   stopKeyHook();
-  if (host.proc) { try { host.proc.stdin.write('EXIT\n'); } catch (e) {} try { host.proc.kill(); } catch (e) {} }
+  for (const h of [host, captureHost]) {
+    if (h && h.proc) { try { h.proc.stdin.write('EXIT\n'); } catch (e) {} try { h.proc.kill(); } catch (e) {} }
+  }
 });

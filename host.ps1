@@ -253,7 +253,29 @@ while ($true) {
     }
     elseif ($line.StartsWith('GOTO ')) {
       $idx = [int]$line.Substring(5)
-      ([VirtualDesktop.Desktop]::FromIndex($idx)).MakeVisible() | Out-Null
+      $target = [VirtualDesktop.Desktop]::FromIndex($idx)
+      # Call IVirtualDesktopManagerInternal::SwitchDesktop directly — instant jump, no cycling or Progman dance
+      $bf = [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance
+      $sbf = [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::Public
+      $ivdField = [VirtualDesktop.Desktop].GetField('ivd', $bf)
+      $ivd = $ivdField.GetValue($target)
+      $asm = [VirtualDesktop.Desktop].Assembly
+      $mgrType = $asm.GetType('VirtualDesktop.DesktopManager')
+      $vdmiField = $mgrType.GetField('VirtualDesktopManagerInternal', $sbf)
+      $vdmi = $vdmiField.GetValue($null)
+      $vdmiType = $asm.GetType('VirtualDesktop.IVirtualDesktopManagerInternal')
+      $switch = $vdmiType.GetMethod('SwitchDesktop')
+      $params = $switch.GetParameters()
+      if ($params.Count -eq 1) {
+        $switch.Invoke($vdmi, @([object]$ivd)) | Out-Null
+      } else {
+        $switch.Invoke($vdmi, @([object][IntPtr]::Zero, [object]$ivd)) | Out-Null
+      }
+      Say "OK"
+    }
+    elseif ($line.StartsWith('PIN ')) {
+      $h = [IntPtr][int64]$line.Substring(4)
+      [VirtualDesktop.Desktop]::PinWindow($h) | Out-Null
       Say "OK"
     }
     else {
