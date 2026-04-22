@@ -40,6 +40,10 @@ class PsHost {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       this.proc.stdout.setEncoding('utf8');
+      this.proc.stdin.on('error', () => {});
+      this.proc.stdout.on('error', () => {});
+      this.proc.stderr.on('error', () => {});
+      this.proc.on('error', () => {});
       let resolvedReady = false;
       this.proc.stdout.on('data', (chunk) => {
         this.buf += chunk;
@@ -69,11 +73,17 @@ class PsHost {
   send(line, timeoutMs) {
     return new Promise(async (resolve) => {
       await this.start();
-      if (!this.proc) return resolve('ERR no host');
+      if (!this.proc || !this.proc.stdin || this.proc.stdin.destroyed || !this.proc.stdin.writable) {
+        return resolve('ERR no host');
+      }
       let settled = false;
       const done = (v) => { if (!settled) { settled = true; resolve(v); } };
       this.queue.push(done);
-      try { this.proc.stdin.write(line + '\n'); } catch (e) { done('ERR write'); }
+      try {
+        this.proc.stdin.write(line + '\n', (err) => { if (err) done('ERR write'); });
+      } catch (e) {
+        done('ERR write');
+      }
       if (timeoutMs) {
         setTimeout(() => {
           if (!settled) {
@@ -103,6 +113,11 @@ class PsHost {
 
 const host = new PsHost();
 const captureHost = new PsHost();
+
+process.on('uncaughtException', (err) => {
+  if (err && (err.code === 'EPIPE' || err.code === 'ECONNRESET' || err.code === 'ERR_STREAM_DESTROYED')) return;
+  console.error('uncaughtException:', err);
+});
 
 // ---------------- Cache ----------------
 
