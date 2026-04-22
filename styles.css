@@ -13,6 +13,14 @@ html, body {
   background: transparent;
 }
 
+body.hidden > * {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+body.hidden {
+  background: transparent !important;
+}
+
 #backdrop {
   position: fixed; inset: 0;
   background: radial-gradient(ellipse at center, rgba(18,22,34,0.80), rgba(8,10,18,0.90));

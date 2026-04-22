@@ -89,7 +89,7 @@ public class CapH {
     });
     t.IsBackground = true;
     t.Start();
-    if (!t.Join(800)) { return false; }
+    if (!t.Join(250)) { return false; }
     try { g.DrawImage(bmp, r.Left, r.Top, w, h); } catch {}
     bmp.Dispose();
     return true;
@@ -116,8 +116,7 @@ function Save-Thumb([System.Drawing.Bitmap]$bmp, [string]$path, [int]$maxW) {
   $th = [int][Math]::Round($sh / $sw * $tw)
   $thumb = New-Object System.Drawing.Bitmap $tw, $th
   $tg = [System.Drawing.Graphics]::FromImage($thumb)
-  $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-  $tg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+  $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::Bilinear
   $tg.DrawImage($bmp, 0, 0, $tw, $th)
   $tg.Dispose()
   $tmp = "$path.tmp"
@@ -127,7 +126,20 @@ function Save-Thumb([System.Drawing.Bitmap]$bmp, [string]$path, [int]$maxW) {
   Move-Item $tmp $path
 }
 
-function Capture-Current([string]$path, [int]$maxW = 1280) {
+$script:CachedWallpaper = $null
+$script:CachedWallpaperPath = $null
+function Get-CachedWallpaper {
+  try {
+    $wp = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -ErrorAction Stop).Wallpaper
+  } catch { $wp = $null }
+  if (-not $wp -or -not (Test-Path $wp)) { return $null }
+  if ($script:CachedWallpaperPath -eq $wp -and $script:CachedWallpaper) { return $script:CachedWallpaper }
+  if ($script:CachedWallpaper) { try { $script:CachedWallpaper.Dispose() } catch {} }
+  try { $script:CachedWallpaper = [System.Drawing.Image]::FromFile($wp); $script:CachedWallpaperPath = $wp } catch { $script:CachedWallpaper = $null }
+  return $script:CachedWallpaper
+}
+
+function Capture-Current([string]$path, [int]$maxW = 640) {
   $s = Screen-Size
   $bmp = New-Object System.Drawing.Bitmap $s.W, $s.H
   $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -137,20 +149,43 @@ function Capture-Current([string]$path, [int]$maxW = 1280) {
   $bmp.Dispose()
 }
 
-function Get-WallpaperBitmap {
-  try {
-    $wp = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -ErrorAction Stop).Wallpaper
-    if ($wp -and (Test-Path $wp)) { return [System.Drawing.Image]::FromFile($wp) }
-  } catch { }
-  return $null
+function Capture-SingleDesktop([int]$index, [string]$path, [int]$maxW = 640) {
+  $count = [int](Get-DesktopCount)
+  $curIdx = 0
+  for ($i = 0; $i -lt $count; $i++) { if (([VirtualDesktop.Desktop]::FromIndex($i)).IsVisible) { $curIdx = $i; break } }
+  if ($index -eq $curIdx) {
+    Capture-Current -path $path -maxW $maxW
+    return
+  }
+  $s = Screen-Size
+  $wallpaper = Get-CachedWallpaper
+  $allHwnds = [CapH]::TopLevelWindows()
+  $myHwnds = New-Object System.Collections.Generic.List[IntPtr]
+  foreach ($hwnd in $allHwnds) {
+    if (-not [CapH]::IsCandidate($hwnd)) { continue }
+    $d = $null
+    try { $d = [VirtualDesktop.Desktop]::FromWindow($hwnd) } catch { continue }
+    if ($null -eq $d) { continue }
+    $i = [int][VirtualDesktop.Desktop]::FromDesktop($d)
+    if ($i -eq $index) { $myHwnds.Add($hwnd) }
+  }
+  $hwnds = $myHwnds.ToArray()
+  [Array]::Reverse($hwnds)
+  $bmp = New-Object System.Drawing.Bitmap $s.W, $s.H
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  if ($wallpaper) { $g.DrawImage($wallpaper, 0, 0, $s.W, $s.H) } else { $g.Clear([System.Drawing.Color]::FromArgb(255, 20, 24, 36)) }
+  foreach ($h in $hwnds) { [CapH]::PaintWindowTo($h, $g) | Out-Null }
+  $g.Dispose()
+  Save-Thumb $bmp $path $maxW
+  $bmp.Dispose()
 }
 
-function Capture-AllNoSwitch([string]$dir, [int]$maxW = 1280) {
+function Capture-AllNoSwitch([string]$dir, [int]$maxW = 640) {
   $count = [int](Get-DesktopCount)
   $curIdx = 0
   for ($i = 0; $i -lt $count; $i++) { if (([VirtualDesktop.Desktop]::FromIndex($i)).IsVisible) { $curIdx = $i; break } }
   $s = Screen-Size
-  $wallpaper = Get-WallpaperBitmap
+  $wallpaper = Get-CachedWallpaper
 
   $allHwnds = [CapH]::TopLevelWindows()
   $byDesktop = @{}
@@ -186,7 +221,6 @@ function Capture-AllNoSwitch([string]$dir, [int]$maxW = 1280) {
     Save-Thumb $bmp $path $maxW
     $bmp.Dispose()
   }
-  if ($wallpaper) { $wallpaper.Dispose() }
 }
 
 function Say([string]$s) { [Console]::Out.WriteLine($s); [Console]::Out.Flush() }
@@ -224,6 +258,16 @@ while ($true) {
       $dir = $line.Substring(12)
       if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
       Capture-AllNoSwitch -dir $dir
+      Say "OK"
+    }
+    elseif ($line.StartsWith('CAPTURE_DESKTOP ')) {
+      $rest = $line.Substring(16)
+      $sp = $rest.IndexOf(' ')
+      $idx = [int]$rest.Substring(0, $sp)
+      $p = $rest.Substring($sp + 1)
+      $pdir = Split-Path -Parent $p
+      if ($pdir -and -not (Test-Path $pdir)) { New-Item -ItemType Directory -Path $pdir -Force | Out-Null }
+      Capture-SingleDesktop -index $idx -path $p
       Say "OK"
     }
     elseif ($line.StartsWith('CAPTURE ')) {

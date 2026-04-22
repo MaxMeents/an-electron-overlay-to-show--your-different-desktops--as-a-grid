@@ -91,7 +91,8 @@ class PsHost {
     }
     return null;
   }
-  async capture(filePath) { return this.send('CAPTURE ' + filePath, 8000); }
+  async capture(filePath) { return this.send('CAPTURE ' + filePath, 6000); }
+  async captureDesktop(index, filePath) { return this.send('CAPTURE_DESKTOP ' + index + ' ' + filePath, 2000); }
   async captureAllNoSwitch(dir) { return this.send('CAPTURE_ALL ' + dir, 30000); }
   async step(dir) { return this.send('STEP ' + dir, 3000); }
   async newDesktop() { return this.send('NEW', 3000); }
@@ -141,11 +142,14 @@ async function captureAll() {
     if (!info) return;
     cache.info = info;
     if (win) win.webContents.send('data', buildPayload());
-    // Run on the dedicated slow host so GOTO/LIST/RENAME remain responsive on the main host
-    await captureHost.captureAllNoSwitch(CACHE_DIR);
-    const info2 = await host.list();
-    if (info2) cache.info = info2;
-    if (win) win.webContents.send('data', buildPayload());
+    // Progressive: capture current desktop first (fastest, fresh), then others one at a time.
+    // Each tile updates in the UI as soon as its PNG lands.
+    const order = [info.current];
+    for (let i = 0; i < info.count; i++) if (i !== info.current) order.push(i);
+    for (const i of order) {
+      await captureHost.captureDesktop(i, thumbPath(i));
+      if (win) win.webContents.send('data', buildPayload());
+    }
   } finally {
     capturing = false;
   }
@@ -173,12 +177,13 @@ let win = null;
 let tray = null;
 let winPinned = false;
 let suppressBlurHide = false;
+let overlayVisible = false;
 
 async function createWindow() {
   const disp = screen.getPrimaryDisplay();
   win = new BrowserWindow({
-    x: disp.bounds.x,
-    y: disp.bounds.y,
+    x: -32000,
+    y: -32000,
     width: disp.bounds.width,
     height: disp.bounds.height,
     frame: false,
@@ -187,8 +192,9 @@ async function createWindow() {
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
-    show: false,
+    show: true,
     focusable: true,
+    opacity: 0,
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -199,11 +205,12 @@ async function createWindow() {
   });
   win.setMenuBarVisibility(false);
   win.setAlwaysOnTop(true, 'screen-saver');
+  win.setIgnoreMouseEvents(true);
   win.loadFile('index.html');
   win.on('closed', () => { win = null; winPinned = false; });
   win.on('blur', () => {
     if (suppressBlurHide) return;
-    if (win && win.isVisible()) hideOverlay();
+    if (win && isOverlayShown()) hideOverlay();
   });
   win.webContents.on('did-finish-load', () => {
     const payload = buildPayload();
@@ -219,19 +226,25 @@ async function createWindow() {
   } catch (e) { /* fallback: non-pinned */ }
 }
 
+function isOverlayShown() { return overlayVisible; }
+
 async function showOverlay() {
   if (!win) { await createWindow(); }
   if (!win) return;
-  if (win.isVisible()) { forceFocus(); return; }
+  if (isOverlayShown()) { forceFocus(); return; }
+  overlayVisible = true;
+  const disp = screen.getPrimaryDisplay();
   const p = buildPayload();
   if (p) win.webContents.send('data', p);
+  try { win.webContents.send('visibility', true); } catch (e) {}
   suppressBlurHide = true;
-  win.showInactive();
+  try { win.setBounds({ x: disp.bounds.x, y: disp.bounds.y, width: disp.bounds.width, height: disp.bounds.height }); } catch (e) {}
+  win.setIgnoreMouseEvents(false);
+  win.setOpacity(1);
   win.setAlwaysOnTop(true, 'screen-saver');
   win.moveTop();
   forceFocus();
-  setTimeout(() => { suppressBlurHide = false; }, 350);
-  // Always refresh thumbnails when the overlay is shown (background, no switching)
+  setTimeout(() => { suppressBlurHide = false; }, 200);
   captureAll().catch(() => {});
 }
 
@@ -239,23 +252,20 @@ function forceFocus() {
   if (!win) return;
   try { app.focus({ steal: true }); } catch (e) {}
   try { win.focus(); } catch (e) {}
-  // The extra toggle of alwaysOnTop convinces Windows to bring us above other topmost windows
-  setTimeout(() => {
-    if (!win || !win.isVisible()) return;
-    try { win.setAlwaysOnTop(false); } catch (e) {}
-    try { win.setAlwaysOnTop(true, 'screen-saver'); } catch (e) {}
-    try { win.focus(); } catch (e) {}
-    try { app.focus({ steal: true }); } catch (e) {}
-  }, 40);
 }
 
 function hideOverlay() {
   if (!win) return;
-  try { win.hide(); } catch (e) {}
+  overlayVisible = false;
+  try { win.webContents.send('visibility', false); } catch (e) {}
+  try { win.setOpacity(0); } catch (e) {}
+  try { win.setIgnoreMouseEvents(true); } catch (e) {}
+  try { win.setBounds({ x: -32000, y: -32000, width: 1, height: 1 }); } catch (e) {}
+  try { win.blur(); } catch (e) {}
 }
 
 function toggleOverlay() {
-  if (win && win.isVisible()) hideOverlay();
+  if (isOverlayShown()) hideOverlay();
   else showOverlay();
 }
 
@@ -341,6 +351,11 @@ function startKeyHook() {
     } else {
       lastRightAltUp = now;
     }
+  });
+  uIOhook.on('keydown', (e) => {
+    if (!overlayVisible) return;
+    const isEsc = UiohookKey && (e.keycode === UiohookKey.Escape || e.keycode === 1);
+    if (isEsc) setImmediate(hideOverlay);
   });
   try { uIOhook.start(); } catch (e) { console.error('hook start failed', e.message); }
 }

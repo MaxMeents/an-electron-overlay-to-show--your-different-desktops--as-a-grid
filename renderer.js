@@ -153,6 +153,12 @@ window.addEventListener('keydown', (e) => {
 const closeBtn = document.getElementById('close-btn');
 if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); window.api.quit(); });
 
+if (window.api.onVisibility) {
+  window.api.onVisibility((v) => {
+    document.body.classList.toggle('hidden', !v);
+  });
+}
+
 let lastCount = -1;
 setTimeout(() => {
   if (lastCount === -1) {
