@@ -54,6 +54,8 @@ public class CapH {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
   [DllImport("user32.dll")] public static extern IntPtr GetShellWindow();
+  [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   public const int GWL_EXSTYLE = -20;
   public const int WS_EX_TOOLWINDOW = 0x80;
@@ -297,23 +299,15 @@ while ($true) {
     }
     elseif ($line.StartsWith('GOTO ')) {
       $idx = [int]$line.Substring(5)
-      $target = [VirtualDesktop.Desktop]::FromIndex($idx)
-      # Call IVirtualDesktopManagerInternal::SwitchDesktop directly — instant jump, no cycling or Progman dance
-      $bf = [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance
-      $sbf = [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::Public
-      $ivdField = [VirtualDesktop.Desktop].GetField('ivd', $bf)
-      $ivd = $ivdField.GetValue($target)
-      $asm = [VirtualDesktop.Desktop].Assembly
-      $mgrType = $asm.GetType('VirtualDesktop.DesktopManager')
-      $vdmiField = $mgrType.GetField('VirtualDesktopManagerInternal', $sbf)
-      $vdmi = $vdmiField.GetValue($null)
-      $vdmiType = $asm.GetType('VirtualDesktop.IVirtualDesktopManagerInternal')
-      $switch = $vdmiType.GetMethod('SwitchDesktop')
-      $params = $switch.GetParameters()
-      if ($params.Count -eq 1) {
-        $switch.Invoke($vdmi, @([object]$ivd)) | Out-Null
-      } else {
-        $switch.Invoke($vdmi, @([object][IntPtr]::Zero, [object]$ivd)) | Out-Null
+      # MakeVisible uses the Progman + AttachThreadInput + SetForegroundWindow dance
+      # that prevents Windows from rejecting the switch. Retry loop kills the 1/20 bounce-back.
+      $attempts = 0
+      $landed = $false
+      while ($attempts -lt 4 -and -not $landed) {
+        try { ([VirtualDesktop.Desktop]::FromIndex($idx)).MakeVisible() | Out-Null } catch {}
+        Start-Sleep -Milliseconds 90
+        if ((Current-Index) -eq $idx) { $landed = $true; break }
+        $attempts++
       }
       Say "OK"
     }

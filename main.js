@@ -381,9 +381,16 @@ function stopKeyHook() { try { uIOhook && uIOhook.stop(); } catch (e) {} }
 // ---------------- IPC ----------------
 
 ipcMain.handle('goto', async (_e, index) => {
-  hideOverlay();
-  await new Promise(r => setTimeout(r, 40));
+  // Hide the overlay VISUALLY but keep focus in our process, so the PowerShell host's
+  // SetForegroundWindow(Progman) call isn't rejected by Windows' foreground-lock rules.
+  overlayVisible = false;
+  try { win.webContents.send('visibility', false); } catch (e) {}
+  try { win.setOpacity(0); } catch (e) {}
+  try { win.setIgnoreMouseEvents(true); } catch (e) {}
+  try { win.setBounds({ x: -32000, y: -32000, width: 1, height: 1 }); } catch (e) {}
   try { await host.goto(index); } catch (e) {}
+  // Now that the switch has committed, finally release focus.
+  try { win.blur(); } catch (e) {}
   setTimeout(() => { refreshCurrentThumb().catch(() => {}); }, 350);
 });
 
