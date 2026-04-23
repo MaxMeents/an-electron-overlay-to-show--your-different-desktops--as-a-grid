@@ -13,6 +13,19 @@
     <div id="grid"></div>
   </div> 
   <div id="hint">← → ↑ ↓ to move · Enter to switch · Esc to hide · Double-tap Right Alt to toggle</div>
+
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-icon">⚠</div>
+      <div class="modal-title">Delete this desktop?</div>
+      <div class="modal-body"><span id="confirm-name">Desktop</span> and its windows will move to the next desktop. This can't be undone.</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

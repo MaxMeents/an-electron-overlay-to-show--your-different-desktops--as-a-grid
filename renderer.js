@@ -70,19 +70,28 @@ function render(data) {
     el.className = 'tile' + (t.current ? ' current' : '');
     el.innerHTML = `
       <div class="name" title="Click to rename">${escapeHtml(t.name)}</div>
-      <div class="thumb">${t.image ? `<img src="${t.image}" alt="" />` : ''}</div>
+      <div class="thumb">
+        ${t.image ? `<img src="${t.image}" alt="" />` : ''}
+        <button class="tile-delete" title="Delete this desktop" aria-label="Delete desktop">×</button>
+      </div>
     `;
     const nameEl = el.querySelector('.name');
     const thumbEl = el.querySelector('.thumb');
+    const delBtn = el.querySelector('.tile-delete');
     nameEl.addEventListener('click', (ev) => {
       ev.stopPropagation();
       selected = i; updateSelection();
       beginEdit(nameEl, t.index);
     });
     thumbEl.addEventListener('click', (ev) => {
+      if (ev.target.closest('.tile-delete')) return;
       ev.stopPropagation();
       selected = i; updateSelection();
       activate(i);
+    });
+    delBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      askDeleteDesktop(t.index, t.name);
     });
     grid.appendChild(el);
     items.push({ el, kind: 'desktop', index: t.index, nameEl });
@@ -136,7 +145,21 @@ async function activatePlus() {
 
 window.addEventListener('keydown', (e) => {
   if (editing) return;
+  if (isModalOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeConfirm(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); confirmOkBtn.click(); return; }
+    return;
+  }
   if (e.key === 'Escape') { window.api.hide(); return; }
+  if (e.key === 'Delete') {
+    const it = items[selected];
+    if (it && it.kind === 'desktop') {
+      const t = { index: it.index, name: (it.nameEl && it.nameEl.textContent) || '' };
+      askDeleteDesktop(t.index, t.name);
+      e.preventDefault();
+    }
+    return;
+  }
   if (e.key === 'F2') {
     const it = items[selected];
     if (it && it.kind === 'desktop' && it.nameEl) beginEdit(it.nameEl, it.index);
@@ -156,8 +179,46 @@ if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); w
 if (window.api.onVisibility) {
   window.api.onVisibility((v) => {
     document.body.classList.toggle('hidden', !v);
+    if (!v) closeConfirm();
   });
 }
+
+// ---------------- Confirm modal ----------------
+const confirmModal = document.getElementById('confirm-modal');
+const confirmNameEl = document.getElementById('confirm-name');
+const confirmOkBtn = document.getElementById('confirm-ok');
+const confirmCancelBtn = document.getElementById('confirm-cancel');
+let pendingDeleteIndex = null;
+
+function askDeleteDesktop(index, name) {
+  pendingDeleteIndex = index;
+  if (confirmNameEl) confirmNameEl.textContent = name || ('Desktop ' + (index + 1));
+  confirmModal.classList.remove('hidden');
+  setTimeout(() => confirmCancelBtn && confirmCancelBtn.focus(), 0);
+}
+function closeConfirm() {
+  pendingDeleteIndex = null;
+  confirmModal.classList.add('hidden');
+}
+confirmCancelBtn.addEventListener('click', (e) => { e.stopPropagation(); closeConfirm(); });
+confirmOkBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const idx = pendingDeleteIndex;
+  closeConfirm();
+  if (idx !== null) { try { await window.api.delete(idx); } catch (err) {} }
+});
+confirmModal.addEventListener('click', (e) => {
+  if (e.target === confirmModal) closeConfirm();
+});
+function isModalOpen() { return !confirmModal.classList.contains('hidden'); }
+
+// ---------------- Background click → hide (acts like double-RAlt toggle) ----------------
+document.addEventListener('click', (e) => {
+  if (isModalOpen()) return;
+  if (editing) return;
+  if (e.target.closest('.tile, #close-btn, #confirm-modal, .modal, .tile-delete')) return;
+  window.api.hide();
+});
 
 let lastCount = -1;
 setTimeout(() => {

@@ -109,6 +109,7 @@ class PsHost {
   async rename(index, name) { return this.send('RENAME ' + index + '|' + name, 4000); }
   async goto(index) { return this.send('GOTO ' + index, 3000); }
   async pin(hwnd) { return this.send('PIN ' + hwnd, 3000); }
+  async removeDesktop(index) { return this.send('REMOVE ' + index, 4000); }
 }
 
 const host = new PsHost();
@@ -401,6 +402,25 @@ ipcMain.handle('rename', async (_e, index, newName) => {
     if (win) win.webContents.send('data', buildPayload());
     return true;
   } catch (e) { return false; }
+});
+
+ipcMain.handle('delete', async (_e, index) => {
+  try { await host.removeDesktop(index); } catch (e) {}
+  // remove that desktop's cached thumb
+  try { fs.unlinkSync(thumbPath(index)); } catch (e) {}
+  // rename higher-index thumbs down by one to match new indices
+  try {
+    const n = (cache.info && cache.info.count) || 0;
+    for (let i = index + 1; i < n; i++) {
+      const from = thumbPath(i), to = thumbPath(i - 1);
+      try { if (fs.existsSync(to)) fs.unlinkSync(to); } catch (e) {}
+      try { if (fs.existsSync(from)) fs.renameSync(from, to); } catch (e) {}
+    }
+    try { fs.unlinkSync(thumbPath(n - 1)); } catch (e) {}
+  } catch (e) {}
+  await refreshListOnly();
+  captureAll().catch(() => {});
+  return true;
 });
 
 ipcMain.handle('hide', () => hideOverlay());

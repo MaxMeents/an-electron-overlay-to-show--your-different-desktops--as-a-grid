@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   goto: (i) => ipcRenderer.invoke('goto', i),
   create: () => ipcRenderer.invoke('create'),
   rename: (i, name) => ipcRenderer.invoke('rename', i, name),
+  delete: (i) => ipcRenderer.invoke('delete', i),
   hide: () => ipcRenderer.invoke('hide'),
   quit: () => ipcRenderer.invoke('quit'),
 });

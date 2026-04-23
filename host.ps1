@@ -322,6 +322,11 @@ while ($true) {
       [VirtualDesktop.Desktop]::PinWindow($h) | Out-Null
       Say "OK"
     }
+    elseif ($line.StartsWith('REMOVE ')) {
+      $idx = [int]$line.Substring(7)
+      Remove-Desktop -Desktop $idx | Out-Null
+      Say "OK"
+    }
     else {
       Say "ERR unknown $line"
     }
