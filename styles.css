@@ -116,8 +116,7 @@ body.hidden {
   object-fit: cover;
   display: block;
 }
-.tile.current .thumb::after {
-  content: "CURRENT";
+.tile .current-badge {
   position: absolute; top: 10px; left: 10px;
   background: rgba(90,160,255,0.90);
   color: #fff;
@@ -125,7 +124,11 @@ body.hidden {
   letter-spacing: 1px;
   padding: 4px 8px;
   border-radius: 6px;
+  z-index: 4;
+  pointer-events: none;
+  display: none;
 }
+.tile.current .current-badge { display: block; }
 .tile:hover .thumb {
   border-color: rgba(255,255,255,0.22);
   transform: translateY(-2px);
@@ -297,6 +300,83 @@ body.hidden {
 .btn-danger:hover {
   background: linear-gradient(180deg, #f35555, #d83838);
   box-shadow: 0 8px 22px rgba(201, 48, 48, 0.55);
+}
+
+.fx-card {
+  width: 520px;
+  max-width: 92vw;
+  text-align: left;
+  padding: 24px 24px 18px;
+}
+.fx-card .modal-title { text-align: center; font-size: 18px; }
+.fx-sub {
+  text-align: center;
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.fx-sub span { color: #cfe4ff; font-weight: 600; }
+#fx-search {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  outline: none;
+  font-family: inherit;
+}
+#fx-search:focus {
+  border-color: rgba(122,183,255,0.5);
+  background: rgba(255,255,255,0.1);
+}
+.fx-list {
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 4px;
+  background: rgba(0,0,0,0.2);
+  margin-bottom: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
+}
+.fx-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: rgba(255,255,255,0.88);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.fx-item .fx-id {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  font-variant-numeric: tabular-nums;
+}
+.fx-item:hover { background: rgba(255,255,255,0.06); }
+.fx-item.selected { background: rgba(122,183,255,0.22); color: #fff; }
+.fx-item.selected .fx-id { color: rgba(255,255,255,0.7); }
+.fx-empty { padding: 14px; text-align: center; color: rgba(255,255,255,0.5); font-size: 13px; }
+.btn-primary {
+  background: linear-gradient(180deg, #5aa0ff, #3d7dd8);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(61,125,216,0.4);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, #6cb0ff, #4a8ce6);
+}
+
+.tile .thumb canvas.fx-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 3;
 }
 
 #hint {

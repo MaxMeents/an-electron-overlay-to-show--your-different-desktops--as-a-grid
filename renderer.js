@@ -72,6 +72,7 @@ function render(data) {
       <div class="name" title="Click to rename">${escapeHtml(t.name)}</div>
       <div class="thumb">
         ${t.image ? `<img src="${t.image}" alt="" />` : ''}
+        <div class="current-badge">CURRENT</div>
         <button class="tile-delete" title="Delete this desktop" aria-label="Delete desktop">×</button>
       </div>
     `;
@@ -93,6 +94,12 @@ function render(data) {
       ev.stopPropagation();
       askDeleteDesktop(t.index, t.name);
     });
+    el.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      selected = i; updateSelection();
+      openFxModal(t.index, t.name);
+    });
     grid.appendChild(el);
     items.push({ el, kind: 'desktop', index: t.index, nameEl });
   });
@@ -109,6 +116,7 @@ function render(data) {
 
   loading.classList.add('hidden');
   updateSelection();
+  reapplyAllEffects();
 }
 
 function updateSelection() {
@@ -179,7 +187,14 @@ if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); w
 if (window.api.onVisibility) {
   window.api.onVisibility((v) => {
     document.body.classList.toggle('hidden', !v);
-    if (!v) closeConfirm();
+    if (!v) {
+      closeConfirm();
+      // Pause all FX loops to stop consuming CPU while hidden
+      tileFx.forEach((state) => { if (state.raf) cancelAnimationFrame(state.raf); state.raf = 0; });
+    } else {
+      // Resume by re-applying (simplest path)
+      reapplyAllEffects();
+    }
   });
 }
 
@@ -214,11 +229,183 @@ function isModalOpen() { return !confirmModal.classList.contains('hidden'); }
 
 // ---------------- Background click → hide (acts like double-RAlt toggle) ----------------
 document.addEventListener('click', (e) => {
-  if (isModalOpen()) return;
+  if (isModalOpen() || isFxModalOpen()) return;
   if (editing) return;
   if (e.target.closest('.tile, #close-btn, #confirm-modal, .modal, .tile-delete')) return;
   window.api.hide();
 });
+
+// ---------------- Border effect engine ----------------
+const fxModal = document.getElementById('fx-modal');
+const fxSearch = document.getElementById('fx-search');
+const fxListEl = document.getElementById('fx-list');
+const fxApplyBtn = document.getElementById('fx-apply');
+const fxCancelBtn = document.getElementById('fx-cancel');
+const fxClearBtn = document.getElementById('fx-clear');
+const fxTargetNameEl = document.getElementById('fx-target-name');
+let fxCatalog = [];
+let fxFiltered = [];
+let fxSelectedIdx = 0;
+let fxTargetDesktop = null;
+const desktopEffects = (() => { try { return JSON.parse(localStorage.getItem('desktopEffects') || '{}'); } catch (e) { return {}; } })();
+const tileFx = new Map();
+
+function buildFxCatalog() {
+  const names = window.BORDER_EFFECTS || [];
+  const meta = window.FX_META || {};
+  let total = names.length;
+  for (const k in meta) total = Math.max(total, +k);
+  const list = [];
+  for (let id = 1; id <= total; id++) {
+    const name = (names[id - 1]) || (meta[id] && meta[id].name) || ('Effect #' + id);
+    const isCss = (id >= 1 && id <= 50) || (id >= 326 && id <= 425) || !!(meta[id] && meta[id].cfg && meta[id].cfg._css);
+    list.push({ id, name, isCss });
+  }
+  return list;
+}
+
+function isFxModalOpen() { return !fxModal.classList.contains('hidden'); }
+
+function openFxModal(desktopIndex, desktopName) {
+  if (!fxCatalog.length) fxCatalog = buildFxCatalog();
+  fxTargetDesktop = desktopIndex;
+  fxTargetNameEl.textContent = desktopName || ('Desktop ' + (desktopIndex + 1));
+  fxSearch.value = '';
+  const cur = desktopEffects[desktopIndex];
+  filterFx('');
+  if (cur) {
+    const i = fxFiltered.findIndex(e => e.id === cur);
+    if (i >= 0) { fxSelectedIdx = i; renderFxList(); }
+  }
+  fxModal.classList.remove('hidden');
+  setTimeout(() => fxSearch.focus(), 0);
+}
+
+function closeFxModal() { fxTargetDesktop = null; fxModal.classList.add('hidden'); }
+
+function filterFx(q) {
+  q = (q || '').trim().toLowerCase();
+  if (!q) { fxFiltered = fxCatalog.slice(); }
+  else { fxFiltered = fxCatalog.filter(e => e.name.toLowerCase().includes(q) || String(e.id) === q); }
+  fxSelectedIdx = 0;
+  renderFxList();
+}
+
+function renderFxList() {
+  if (!fxFiltered.length) { fxListEl.innerHTML = '<div class="fx-empty">No effects match</div>'; return; }
+  const frag = document.createDocumentFragment();
+  fxFiltered.slice(0, 400).forEach((e, i) => {
+    const el = document.createElement('div');
+    el.className = 'fx-item' + (i === fxSelectedIdx ? ' selected' : '');
+    el.dataset.idx = i;
+    el.innerHTML = `<span class="fx-name">${escapeHtml(e.name)}</span><span class="fx-id">#${e.id}</span>`;
+    el.addEventListener('click', () => { fxSelectedIdx = i; renderFxList(); });
+    el.addEventListener('dblclick', () => { fxSelectedIdx = i; applyFxFromModal(); });
+    frag.appendChild(el);
+  });
+  fxListEl.innerHTML = '';
+  fxListEl.appendChild(frag);
+  const sel = fxListEl.querySelector('.fx-item.selected');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+fxSearch.addEventListener('input', () => filterFx(fxSearch.value));
+fxSearch.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { fxSelectedIdx = Math.min(fxSelectedIdx + 1, fxFiltered.length - 1); renderFxList(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { fxSelectedIdx = Math.max(fxSelectedIdx - 1, 0); renderFxList(); e.preventDefault(); }
+  else if (e.key === 'Enter') { applyFxFromModal(); e.preventDefault(); }
+  else if (e.key === 'Escape') { closeFxModal(); e.preventDefault(); }
+});
+fxApplyBtn.addEventListener('click', (e) => { e.stopPropagation(); applyFxFromModal(); });
+fxCancelBtn.addEventListener('click', (e) => { e.stopPropagation(); closeFxModal(); });
+fxClearBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (fxTargetDesktop === null) return;
+  delete desktopEffects[fxTargetDesktop];
+  saveDesktopEffects();
+  applyEffectToDesktopTile(fxTargetDesktop, null);
+  closeFxModal();
+});
+fxModal.addEventListener('click', (e) => { if (e.target === fxModal) closeFxModal(); });
+
+function applyFxFromModal() {
+  const pick = fxFiltered[fxSelectedIdx];
+  if (!pick || fxTargetDesktop === null) return;
+  desktopEffects[fxTargetDesktop] = pick.id;
+  saveDesktopEffects();
+  applyEffectToDesktopTile(fxTargetDesktop, pick.id);
+  closeFxModal();
+}
+
+function saveDesktopEffects() {
+  try { localStorage.setItem('desktopEffects', JSON.stringify(desktopEffects)); } catch (e) {}
+}
+
+function findTileByDesktopIndex(di) {
+  for (const it of items) if (it.kind === 'desktop' && it.index === di) return it.el;
+  return null;
+}
+
+function clearTileFx(tileEl) {
+  const state = tileFx.get(tileEl);
+  if (state) {
+    if (state.raf) cancelAnimationFrame(state.raf);
+    if (state.canvas && state.canvas.parentNode) state.canvas.parentNode.removeChild(state.canvas);
+    tileFx.delete(tileEl);
+  }
+  const thumb = tileEl.querySelector('.thumb');
+  if (thumb) {
+    // Strip any bNN class
+    Array.from(thumb.classList).forEach(c => { if (/^b\d+$/.test(c)) thumb.classList.remove(c); });
+  }
+}
+
+function applyEffectToDesktopTile(desktopIndex, effectId) {
+  const tileEl = findTileByDesktopIndex(desktopIndex);
+  if (!tileEl) return;
+  const thumb = tileEl.querySelector('.thumb');
+  if (!thumb) return;
+  clearTileFx(tileEl);
+  if (!effectId) return;
+  if (!fxCatalog.length) fxCatalog = buildFxCatalog();
+  const spec = fxCatalog.find(e => e.id === effectId);
+  if (!spec) return;
+  if (spec.isCss) {
+    const cls = 'b' + String(effectId).padStart(2, '0');
+    thumb.classList.add(cls);
+  } else {
+    const meta = (window.FX_META || {})[effectId];
+    if (!meta || !window.FX) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'fx-canvas';
+    thumb.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    let inst;
+    try { inst = window.FX(meta.cfg)(); } catch (e) { console.warn('FX factory failed', e); canvas.remove(); return; }
+    let last = performance.now();
+    const state = { canvas, inst, raf: 0 };
+    function loop(now) {
+      if (!state.canvas.isConnected) return;
+      const rect = state.canvas.getBoundingClientRect();
+      const w = Math.max(1, Math.round(rect.width));
+      const h = Math.max(1, Math.round(rect.height));
+      if (state.canvas.width !== w || state.canvas.height !== h) { state.canvas.width = w; state.canvas.height = h; }
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      ctx.clearRect(0, 0, w, h);
+      try { state.inst.step(dt, w, h); state.inst.draw(ctx, w, h); } catch (e) {}
+      state.raf = requestAnimationFrame(loop);
+    }
+    state.raf = requestAnimationFrame(loop);
+    tileFx.set(tileEl, state);
+  }
+}
+
+function reapplyAllEffects() {
+  Object.keys(desktopEffects).forEach(k => {
+    applyEffectToDesktopTile(+k, desktopEffects[k]);
+  });
+}
 
 let lastCount = -1;
 setTimeout(() => {

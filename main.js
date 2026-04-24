@@ -233,12 +233,12 @@ async function createWindow() {
     if (payload) win.webContents.send('data', payload);
   });
   await new Promise(r => win.webContents.once('did-finish-load', r));
-  // Pin the window to all virtual desktops so hide/show doesn't bounce through desktops
+  // Pin the window to all virtual desktops — fire-and-forget so we don't block the first show
+  // while the PowerShell host is still compiling its COM types (takes ~2-3s cold).
   try {
     const hwndBuf = win.getNativeWindowHandle();
     const hwnd = hwndBuf.length >= 8 ? hwndBuf.readBigUInt64LE(0).toString() : String(hwndBuf.readUInt32LE(0));
-    await host.pin(hwnd);
-    winPinned = true;
+    host.pin(hwnd).then(() => { winPinned = true; }).catch(() => {});
   } catch (e) { /* fallback: non-pinned */ }
 }
 
@@ -257,6 +257,7 @@ async function showOverlay() {
   try { win.setBounds({ x: disp.bounds.x, y: disp.bounds.y, width: disp.bounds.width, height: disp.bounds.height }); } catch (e) {}
   win.setIgnoreMouseEvents(false);
   win.setOpacity(1);
+  try { win.show(); } catch (e) {}
   win.setAlwaysOnTop(true, 'screen-saver');
   win.moveTop();
   forceFocus();
@@ -278,6 +279,7 @@ function hideOverlay() {
   try { win.setIgnoreMouseEvents(true); } catch (e) {}
   try { win.setBounds({ x: -32000, y: -32000, width: 1, height: 1 }); } catch (e) {}
   try { win.blur(); } catch (e) {}
+  try { win.hide(); } catch (e) {}
 }
 
 function toggleOverlay() {
@@ -381,16 +383,9 @@ function stopKeyHook() { try { uIOhook && uIOhook.stop(); } catch (e) {} }
 // ---------------- IPC ----------------
 
 ipcMain.handle('goto', async (_e, index) => {
-  // Hide the overlay VISUALLY but keep focus in our process, so the PowerShell host's
-  // SetForegroundWindow(Progman) call isn't rejected by Windows' foreground-lock rules.
-  overlayVisible = false;
-  try { win.webContents.send('visibility', false); } catch (e) {}
-  try { win.setOpacity(0); } catch (e) {}
-  try { win.setIgnoreMouseEvents(true); } catch (e) {}
-  try { win.setBounds({ x: -32000, y: -32000, width: 1, height: 1 }); } catch (e) {}
+  hideOverlay();
+  await new Promise(r => setTimeout(r, 40));
   try { await host.goto(index); } catch (e) {}
-  // Now that the switch has committed, finally release focus.
-  try { win.blur(); } catch (e) {}
   setTimeout(() => { refreshCurrentThumb().catch(() => {}); }, 350);
 });
 

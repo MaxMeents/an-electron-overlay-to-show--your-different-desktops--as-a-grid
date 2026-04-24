@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/base.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-01-10.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-11-20.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-21-30.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-31-40.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-41-50.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-51-100.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-101-150.css" />
+<link rel="stylesheet" href="Triple AAA Game Studio Element Borders/css/borders-326-425.css" />
 <title>Desktop Grid</title>
 </head>
 <body>
@@ -13,6 +22,20 @@
     <div id="grid"></div>
   </div> 
   <div id="hint">← → ↑ ↓ to move · Enter to switch · Esc to hide · Double-tap Right Alt to toggle</div>
+
+  <div id="fx-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card fx-card">
+      <div class="modal-title">Choose a border effect</div>
+      <div class="fx-sub">Desktop <span id="fx-target-name"></span></div>
+      <input id="fx-search" type="search" placeholder="Type to filter 625 effects…" autocomplete="off" spellcheck="false" />
+      <div id="fx-list" class="fx-list"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="fx-clear">Remove effect</button>
+        <button class="btn btn-secondary" id="fx-cancel">Cancel</button>
+        <button class="btn btn-primary" id="fx-apply">Apply</button>
+      </div>
+    </div>
+  </div>
 
   <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-card">
@@ -26,6 +49,18 @@
     </div>
   </div>
 
+  <script src="Triple AAA Game Studio Element Borders/Max_FX_Engine.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/effects.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-engine-ext.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-02.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-03.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-04.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-05.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-06.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-07.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-08.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-09.js"></script>
+  <script src="Triple AAA Game Studio Element Borders/js/fx-page-10.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
