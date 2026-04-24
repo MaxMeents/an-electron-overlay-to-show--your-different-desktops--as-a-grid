@@ -100,21 +100,39 @@ body.hidden {
   user-select: text;
   -webkit-user-select: text;
 }
-.tile .thumb { cursor: pointer; }
-.tile .thumb {
+:where(.tile) .thumb { cursor: pointer; }
+:where(.tile) .thumb {
   aspect-ratio: 16 / 9;
   border-radius: 14px;
+  position: relative;
+  isolation: isolate;
+  transition: transform 160ms ease, outline-color 160ms ease, box-shadow 160ms ease;
+}
+:where(.tile) .thumb > .inner {
+  position: absolute;
+  inset: 6px;
+  border-radius: 10px;
   overflow: hidden;
   background: #10131c;
-  border: 2px solid rgba(255,255,255,0.08);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
-  position: relative;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
+  z-index: 1;
 }
-.tile .thumb img {
+:where(.tile) .thumb > .inner img {
   width: 100%; height: 100%;
   object-fit: cover;
   display: block;
+}
+:where(.tile) .thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  outline: 2px solid rgba(255,255,255,0.08);
+  outline-offset: -2px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  z-index: 0;
+  transition: outline-color 160ms ease, box-shadow 160ms ease;
 }
 .tile .current-badge {
   position: absolute; top: 10px; left: 10px;
@@ -124,29 +142,32 @@ body.hidden {
   letter-spacing: 1px;
   padding: 4px 8px;
   border-radius: 6px;
-  z-index: 4;
+  z-index: 5;
   pointer-events: none;
   display: none;
 }
 .tile.current .current-badge { display: block; }
-.tile:hover .thumb {
-  border-color: rgba(255,255,255,0.22);
+:where(.tile:hover) .thumb {
   transform: translateY(-2px);
 }
-.tile.selected .thumb {
-  border-color: #7ab7ff;
-  box-shadow: 0 0 0 3px rgba(122,183,255,0.35), 0 14px 40px rgba(0,0,0,0.7);
+:where(.tile:hover) .thumb::after {
+  outline-color: rgba(255,255,255,0.22);
+}
+:where(.tile.selected) .thumb {
   transform: translateY(-2px) scale(1.02);
 }
-.tile.selected .name {
+:where(.tile.selected) .thumb::after {
+  outline-color: #7ab7ff;
+  box-shadow: 0 0 0 3px rgba(122,183,255,0.35), 0 14px 40px rgba(0,0,0,0.7);
+}
+:where(.tile.selected) .name {
   color: #cfe4ff;
 }
 
-.tile.plus .thumb {
+:where(.tile.plus) .thumb > .inner {
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.04);
-  border-style: dashed;
-  border-color: rgba(255,255,255,0.25);
+  border: 2px dashed rgba(255,255,255,0.25);
 }
 .tile-delete {
   position: absolute;

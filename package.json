@@ -1,6 +1,6 @@
 {
   "name": "desktop-grid-overlay",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Transparent Electron overlay for Windows virtual desktops. Double-tap Right Alt to show.",
   "main": "main.js",
   "author": "maxmeents",

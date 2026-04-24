@@ -71,7 +71,7 @@ function render(data) {
     el.innerHTML = `
       <div class="name" title="Click to rename">${escapeHtml(t.name)}</div>
       <div class="thumb">
-        ${t.image ? `<img src="${t.image}" alt="" />` : ''}
+        <div class="inner">${t.image ? `<img src="${t.image}" alt="" />` : ''}</div>
         <div class="current-badge">CURRENT</div>
         <button class="tile-delete" title="Delete this desktop" aria-label="Delete desktop">×</button>
       </div>
@@ -108,7 +108,7 @@ function render(data) {
   plus.className = 'tile plus';
   plus.innerHTML = `
     <div class="name">New Desktop</div>
-    <div class="thumb"><div class="sign">+</div></div>
+    <div class="thumb"><div class="inner"><div class="sign">+</div></div></div>
   `;
   plus.addEventListener('click', () => activatePlus());
   grid.appendChild(plus);
@@ -368,9 +368,8 @@ function clearTileFx(tileEl) {
   }
   const thumb = tileEl.querySelector('.thumb');
   if (thumb) {
-    // Remove any stray fx-canvases in the thumb
     thumb.querySelectorAll('canvas.fx-canvas').forEach(c => c.remove());
-    // Strip any bNN class
+    thumb.querySelectorAll('.fx-overlay').forEach(o => o.remove());
     Array.from(thumb.classList).forEach(c => { if (/^b\d+$/.test(c)) thumb.classList.remove(c); });
   }
 }
@@ -443,10 +442,11 @@ window.api.onData((data) => {
     const nameEl = it.el.querySelector('.name');
     if (nameEl && nameEl.textContent !== t.name) nameEl.textContent = t.name;
     const thumbEl = it.el.querySelector('.thumb');
-    if (t.image) {
-      const img = thumbEl.querySelector('img');
+    const innerEl = thumbEl.querySelector('.inner');
+    if (t.image && innerEl) {
+      const img = innerEl.querySelector('img');
       if (img) { if (img.getAttribute('src') !== t.image) img.setAttribute('src', t.image); }
-      else { thumbEl.innerHTML = `<img src="${t.image}" alt="" />`; }
+      else { innerEl.innerHTML = `<img src="${t.image}" alt="" />`; }
     }
     it.el.classList.toggle('current', !!t.current);
   });
