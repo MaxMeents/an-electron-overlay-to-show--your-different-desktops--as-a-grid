@@ -347,14 +347,29 @@ function findTileByDesktopIndex(di) {
 }
 
 function clearTileFx(tileEl) {
+  // Remove state for this tile
   const state = tileFx.get(tileEl);
   if (state) {
     if (state.raf) cancelAnimationFrame(state.raf);
     if (state.canvas && state.canvas.parentNode) state.canvas.parentNode.removeChild(state.canvas);
+    state.inst = null;
+    state.canvas = null;
     tileFx.delete(tileEl);
+  }
+  // Prune any orphaned entries (key DOM node no longer in document)
+  for (const [el, s] of tileFx) {
+    if (!el.isConnected) {
+      if (s.raf) cancelAnimationFrame(s.raf);
+      if (s.canvas && s.canvas.parentNode) s.canvas.parentNode.removeChild(s.canvas);
+      s.inst = null;
+      s.canvas = null;
+      tileFx.delete(el);
+    }
   }
   const thumb = tileEl.querySelector('.thumb');
   if (thumb) {
+    // Remove any stray fx-canvases in the thumb
+    thumb.querySelectorAll('canvas.fx-canvas').forEach(c => c.remove());
     // Strip any bNN class
     Array.from(thumb.classList).forEach(c => { if (/^b\d+$/.test(c)) thumb.classList.remove(c); });
   }

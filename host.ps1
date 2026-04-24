@@ -52,6 +52,13 @@ public class CapH {
   [DllImport("user32.dll", EntryPoint="GetWindowLong")] public static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
   public static IntPtr GetWindowLongX(IntPtr h, int i) { if (IntPtr.Size == 8) return GetWindowLongPtr64(h, i); return GetWindowLong32(h, i); }
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
+  [DllImport("user32.dll", CharSet = CharSet.Auto)]
+  public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+  public const uint WM_PRINT = 0x0317;
+  public const uint SMTO_ABORTIFHUNG = 0x0002;
+  public const uint PRF_NONCLIENT = 0x00000002;
+  public const uint PRF_CLIENT = 0x00000004;
+  public const uint PRF_CHILDREN = 0x00000010;
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
   [DllImport("user32.dll")] public static extern IntPtr GetShellWindow();
   [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
@@ -79,21 +86,21 @@ public class CapH {
     RECT r; if (!GetWindowRect(hwnd, out r)) return false;
     int w = r.Right - r.Left; int h = r.Bottom - r.Top;
     if (w <= 0 || h <= 0) return false;
-    var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
-    var t = new System.Threading.Thread(() => {
-      try {
-        using (var wg = Graphics.FromImage(bmp)) {
-          IntPtr hdc = wg.GetHdc();
-          try { PrintWindow(hwnd, hdc, 0x2); }
-          finally { wg.ReleaseHdc(hdc); }
-        }
-      } catch {}
-    });
-    t.IsBackground = true;
-    t.Start();
-    if (!t.Join(250)) { return false; }
-    try { g.DrawImage(bmp, r.Left, r.Top, w, h); } catch {}
-    bmp.Dispose();
+    // Use SendMessageTimeout(WM_PRINT) so hung windows can't leak threads/bitmaps.
+    // WM_PRINT goes through the same rendering path as PrintWindow but supports a
+    // built-in timeout + SMTO_ABORTIFHUNG. Tradeoff: GPU-composed windows (Chrome,
+    // Edge, Electron) may render as blank boxes — acceptable to prevent runaway leaks.
+    using (var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb)) {
+      using (var wg = Graphics.FromImage(bmp)) {
+        IntPtr hdc = wg.GetHdc();
+        try {
+          IntPtr result;
+          IntPtr flags = (IntPtr)(PRF_CLIENT | PRF_CHILDREN | PRF_NONCLIENT);
+          SendMessageTimeout(hwnd, WM_PRINT, hdc, flags, SMTO_ABORTIFHUNG, 180, out result);
+        } finally { wg.ReleaseHdc(hdc); }
+      }
+      try { g.DrawImage(bmp, r.Left, r.Top, w, h); } catch {}
+    }
     return true;
   }
 }
